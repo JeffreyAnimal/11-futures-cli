@@ -2,13 +2,15 @@ package ohm.softa.a11;
 
 import ohm.softa.a11.openmensa.OpenMensaAPI;
 import ohm.softa.a11.openmensa.OpenMensaAPIService;
+import ohm.softa.a11.openmensa.model.Canteen;
+import ohm.softa.a11.openmensa.model.PageInfo;
+import retrofit2.Response;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Locale;
-import java.util.Scanner;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.IntStream;
 
 /**
@@ -24,7 +26,7 @@ public class App {
 	private static final Calendar currentDate = Calendar.getInstance();
 	private static int currentCanteenId = -1;
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws ExecutionException, InterruptedException {
 		MenuSelection selection;
 		/* loop while true to get back to the menu every time an action was performed */
 		do {
@@ -49,9 +51,52 @@ public class App {
 		} while (true);
 	}
 
-	private static void printCanteens() {
+	private static void printCanteens() throws ExecutionException, InterruptedException {
 		System.out.print("Fetching canteens [");
+		openMensaAPI.getCanteens().thenApply(response-> {
+
+			PageInfo pageInfo = PageInfo.extractFromResponse(response);
+
+
+			List<Canteen> totalList = response.body();
+			CompletableFuture totalFutures = null;
+
+
+			for (int i = pageInfo.getCurrentPageIndex() + 1; i <= pageInfo.getTotalCountOfPages(); i++) {
+				if (totalFutures == null) {
+					totalFutures = openMensaAPI.getCanteens(i);
+					continue;
+				}
+				totalFutures = totalFutures.thenCombine(openMensaAPI.getCanteens(i), (list1, list2) ->
+				{
+					LinkedList<Canteen> result = new LinkedList<>((List<Canteen>) list1);
+					return result.addAll((List<Canteen>) list2);
+				});
+
+
+			}
+			try {
+				totalFutures.get();
+			} catch (InterruptedException | ExecutionException e) {
+				System.out.println(e);
+
+			}
+
+
+			return totalList;
+		}).thenApply((list)-> {
+
+			for (Canteen c : list)
+				System.out.println(c);
+
+			return null;
+		}).join();
+
+
+
 		/* TODO fetch all canteens and print them to STDOUT
+
+
 		 * at first get a page without an index to be able to extract the required pagination information
 		 * afterwards you can iterate the remaining pages
 		 * keep in mind that you should await the process as the user has to select canteen with a specific id */
